@@ -231,15 +231,22 @@ export default function App() {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(async () => {
       try {
+        const meeting = meetings.find(m => m.id === id);
+        const backfill = (meeting && !meeting.authorName && user) ? {
+          authorName: user.displayName || 'Unknown User',
+          authorEmail: user.email || 'unknown@example.com'
+        } : {};
+
         await updateDoc(doc(db, 'meetings', id), {
           ...updates,
+          ...backfill,
           updatedAt: Timestamp.now(),
         });
       } catch (error) {
         console.error("Failed to update meeting:", error);
       }
     }, 1000);
-  }, []);
+  }, [user, meetings]);
 
   const handleMinutesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -273,8 +280,15 @@ export default function App() {
     setIsGenerating(true);
     try {
       const description = await describeMeeting(localMinutes);
+      const meeting = meetings.find(m => m.id === selectedMeetingId);
+      const backfill = (meeting && !meeting.authorName && user) ? {
+        authorName: user.displayName || 'Unknown User',
+        authorEmail: user.email || 'unknown@example.com'
+      } : {};
+
       await updateDoc(doc(db, 'meetings', selectedMeetingId), { 
         aiDescription: description,
+        ...backfill,
         updatedAt: Timestamp.now()
       });
     } catch (error) {
@@ -293,8 +307,15 @@ export default function App() {
       const text = event.target?.result as string;
       if (text) {
         setLocalMinutes(text);
+        const meeting = meetings.find(m => m.id === selectedMeetingId);
+        const backfill = (meeting && !meeting.authorName && user) ? {
+          authorName: user.displayName || 'Unknown User',
+          authorEmail: user.email || 'unknown@example.com'
+        } : {};
+
         await updateDoc(doc(db, 'meetings', selectedMeetingId), { 
           minutes: text,
+          ...backfill,
           updatedAt: Timestamp.now()
         });
         
@@ -304,6 +325,7 @@ export default function App() {
           setLocalName(newName);
           await updateDoc(doc(db, 'meetings', selectedMeetingId), { 
             name: newName,
+            ...backfill,
             updatedAt: Timestamp.now()
           });
         }

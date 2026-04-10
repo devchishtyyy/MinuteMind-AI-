@@ -33,14 +33,15 @@ service cloud.firestore {
     }
 
     function isValidMeeting(data) {
-      return data.keys().hasAll(['name', 'minutes', 'userId', 'authorName', 'authorEmail', 'createdAt', 'updatedAt']) &&
+      return data.keys().hasAll(['name', 'minutes', 'userId', 'createdAt', 'updatedAt']) &&
              data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
              data.minutes is string && data.minutes.size() >= 0 && data.minutes.size() <= 100000 &&
              data.userId == request.auth.uid &&
-             data.authorName is string && data.authorName.size() > 0 &&
-             data.authorEmail is string && data.authorEmail.size() > 0 &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp &&
+             (resource != null || data.keys().hasAll(['authorName', 'authorEmail'])) &&
+             (!('authorName' in data) || (data.authorName is string && data.authorName.size() > 0)) &&
+             (!('authorEmail' in data) || (data.authorEmail is string && data.authorEmail.size() > 0)) &&
              (!('aiDescription' in data) || (data.aiDescription is string && data.aiDescription.size() <= 5000));
     }
 
