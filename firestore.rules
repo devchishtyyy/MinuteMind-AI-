@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: meetings
+    // Document ID: meetingId
+    // Fields:
+    //   - name: string (required, 1-100 chars) - The title of the meeting
+    //   - minutes: string (required, 1-100000 chars) - The full meeting minutes
+    //   - aiDescription: string (optional, 0-5000 chars) - AI generated summary
+    //   - createdAt: timestamp (required) - Creation time
+    //   - updatedAt: timestamp (required) - Last update time
+    //   - userId: string (required) - Owner's UID
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidMeeting(data) {
+      return data.keys().hasAll(['name', 'minutes', 'userId', 'authorName', 'authorEmail', 'createdAt', 'updatedAt']) &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.minutes is string && data.minutes.size() >= 0 && data.minutes.size() <= 100000 &&
+             data.userId == request.auth.uid &&
+             data.authorName is string && data.authorName.size() > 0 &&
+             data.authorEmail is string && data.authorEmail.size() > 0 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             (!('aiDescription' in data) || (data.aiDescription is string && data.aiDescription.size() <= 5000));
+    }
+
+    match /meetings/{meetingId} {
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidMeeting(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidMeeting(request.resource.data) &&
+                      request.resource.data.userId == resource.data.userId &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+    
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

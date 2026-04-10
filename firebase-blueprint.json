@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "Meeting": {
+      "title": "Meeting",
+      "description": "Represents a meeting with its name, minutes, and AI-generated description.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name or title of the meeting."
+        },
+        "minutes": {
+          "type": "string",
+          "description": "The full text of the meeting minutes."
+        },
+        "aiDescription": {
+          "type": "string",
+          "description": "AI-generated summary or description of the meeting."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the meeting was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the meeting was last updated."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who owns this meeting."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "The display name of the user who created/added the meeting."
+        },
+        "authorEmail": {
+          "type": "string",
+          "description": "The email of the user who created/added the meeting."
+        }
+      },
+      "required": ["name", "minutes", "userId", "authorName", "authorEmail", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/meetings/{meetingId}": {
+      "schema": "Meeting",
+      "description": "Collection of meetings."
+    }
+  }
+}
