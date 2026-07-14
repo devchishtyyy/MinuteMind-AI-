@@ -6,9 +6,9 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app        = express();
-const port       = parseInt(process.env.PORT || '6004', 10);
+const port       = parseInt(process.env.PORT || '6006', 10);
 const distPath   = path.resolve(process.env.DIST_PATH || path.join(__dirname, 'dist'));
-const backendUrl = process.env.BACKEND_URL || 'http://localhost:6003';
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:6005';
 
 // ── Security headers ────────────────────────────────────────────────────────────
 // Applied to every response served by this process (static files + SPA fallback).

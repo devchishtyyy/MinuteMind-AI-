@@ -6,7 +6,7 @@ module.exports = {
       cwd: __dirname,
       env: {
         NODE_ENV: 'production',
-        PORT: 6003,
+        PORT: 6005,
       },
     },
     {
@@ -15,9 +15,9 @@ module.exports = {
       cwd: __dirname,
       env: {
         NODE_ENV: 'production',
-        PORT: 6004,
+        PORT: 6006,
         DIST_PATH: './dist',
-        BACKEND_URL: 'http://localhost:6003',
+        BACKEND_URL: 'http://localhost:6005',
       },
     },
   ],
