@@ -1,5 +1,6 @@
 {
   "name": "MinuteMind AI",
   "description": "Organize, summarize, and retrieve meeting minutes with AI-powered insights.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
