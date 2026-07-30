@@ -14,14 +14,16 @@ const backendUrl = process.env.BACKEND_URL || 'http://localhost:6005';
 // Applied to every response served by this process (static files + SPA fallback).
 // The /api proxy responses get overwritten by backend headers, so these only
 // meaningfully affect HTML, JS, CSS, and font responses.
+// apis.google.com is Firebase Auth's cross-window messaging helper (gapi.iframes),
+// required for signInWithPopup with any OAuth provider (Google, Microsoft, etc).
 const CSP = [
   "default-src 'none'",
-  "script-src 'self' https://cdn.jsdelivr.net",
+  "script-src 'self' https://cdn.jsdelivr.net https://apis.google.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://*.googleusercontent.com",
-  "connect-src 'self' https://*.googleapis.com https://securetoken.googleapis.com",
-  "frame-src https://accounts.google.com https://*.firebaseapp.com",
+  "connect-src 'self' https://*.googleapis.com https://securetoken.googleapis.com https://apis.google.com",
+  "frame-src https://accounts.google.com https://*.firebaseapp.com https://apis.google.com",
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
