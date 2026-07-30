@@ -42,21 +42,24 @@ import {
   Table,
   Presentation,
   Paperclip,
-  AlertTriangle
+  AlertTriangle,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from './lib/utils';
 import { Meeting, Attendee, ActionItem, Attachment } from './types';
-import { 
-  analyzeMeetingMinutes, 
-  askAboutMeetings, 
-  findRelevantMeetings, 
-  generateSmartBriefing, 
-  askCorporateMemory, 
-  generateEmailSummary 
+import {
+  analyzeMeetingMinutes,
+  askAboutMeetings,
+  findRelevantMeetings,
+  generateSmartBriefing,
+  askCorporateMemory,
+  generateEmailSummary
 } from './services/gemini';
 import StatCharts from './components/StatCharts';
+import Login from './components/Login';
+import { auth, microsoftProvider, signInWithPopup, signOut, onAuthStateChanged, ALLOWED_EMAIL_DOMAIN, type User } from './lib/firebase';
 
 // === CONSTANTS & COLOR MAPS ===
 const CATEGORY_COLORS = {
@@ -83,6 +86,44 @@ export default function App() {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // === AUTHENTICATION STATE ===
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isSigningIn, setIsSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleMicrosoftSignIn = useCallback(async () => {
+    setIsSigningIn(true);
+    setAuthError(null);
+    try {
+      const result = await signInWithPopup(auth, microsoftProvider);
+      const email = result.user.email?.toLowerCase() || '';
+      if (!email.endsWith(ALLOWED_EMAIL_DOMAIN)) {
+        await signOut(auth);
+        setAuthError('Access is restricted to Packages Limited company accounts. Please sign in with your work Microsoft account.');
+      }
+    } catch (err: any) {
+      if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
+        console.error('Microsoft sign-in failed:', err);
+        setAuthError('Sign-in failed. Please try again.');
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
+  }, []);
+
+  const handleSignOut = useCallback(() => {
+    signOut(auth);
+  }, []);
 
   // === SMART BRIEFING STATES ===
   const [briefingModalOpen, setBriefingModalOpen] = useState(false);
@@ -1165,9 +1206,21 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
     });
   }, [selectedMeeting, actionItemFilter]);
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#0f1117] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-[#6c63ff] animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login onSignIn={handleMicrosoftSignIn} isSigningIn={isSigningIn} error={authError} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#0f1117] text-[#f3f4f6] font-sans flex flex-col relative overflow-hidden">
-      
+
       {/* Toast Overlay stack */}
       <div className="fixed top-6 right-6 z-50 space-y-3 pointer-events-none">
         <AnimatePresence>
@@ -1414,10 +1467,28 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
                 </div>
               </div>
 
-              {/* Developer Attribution Signature inside Sidebar */}
-              <div className="p-4 border-t border-gray-800 bg-[#11131a]/40 text-center text-xs text-gray-500 self-stretch">
-                <div>User Inbox</div>
-                <div className="font-mono text-[10px] text-indigo-400 truncate mt-0.5">docshahraiz@gmail.com</div>
+              {/* Signed-in user footer */}
+              <div className="p-4 border-t border-gray-800 bg-[#11131a]/40 self-stretch">
+                <div className="flex items-center gap-3">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.displayName || 'User'} className="w-8 h-8 rounded-full shrink-0 border border-gray-700" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-[#6c63ff]/20 text-[#6c63ff] flex items-center justify-center font-bold text-xs shrink-0 border border-[#6c63ff]/30">
+                      {(user.displayName || user.email || '?').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-gray-200 truncate">{user.displayName || 'Signed in'}</div>
+                    <div className="font-mono text-[10px] text-gray-500 truncate">{user.email}</div>
+                  </div>
+                  <button
+                    onClick={handleSignOut}
+                    title="Sign out"
+                    className="p-1.5 hover:bg-gray-800 text-gray-500 hover:text-white rounded-lg transition-all shrink-0"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </motion.aside>
           )}
