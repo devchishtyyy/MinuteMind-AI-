@@ -50,7 +50,7 @@ export default function Login({ onSignIn, isSigningIn, error }: LoginProps) {
         )}
 
         <p className="text-[10px] text-gray-600 text-center mt-6 leading-relaxed">
-          Access is restricted to Packages Limited company accounts.
+          Access is restricted to authorized Packages Group company accounts.
         </p>
       </div>
     </div>

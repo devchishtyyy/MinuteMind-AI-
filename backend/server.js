@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import geminiRoutes from './routes/gemini.js';
+import authRoutes from './routes/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,6 +58,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/gemini', geminiRoutes);
+app.use('/api/auth', authRoutes);
 
 // ── Static assets ─────────────────────────────────────────────────────────────
 // Vite outputs hashed filenames (e.g. index-CNluxwLo.js) which are safe to cache

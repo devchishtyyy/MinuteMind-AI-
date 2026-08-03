@@ -59,7 +59,7 @@ import {
 } from './services/gemini';
 import StatCharts from './components/StatCharts';
 import Login from './components/Login';
-import { auth, microsoftProvider, signInWithPopup, signOut, onAuthStateChanged, ALLOWED_EMAIL_DOMAIN, type User } from './lib/firebase';
+import { auth, microsoftProvider, signInWithPopup, signOut, onAuthStateChanged, OAuthProvider, ALLOWED_EMAIL_DOMAINS, type User } from './lib/firebase';
 
 // === CONSTANTS & COLOR MAPS ===
 const CATEGORY_COLORS = {
@@ -92,9 +92,36 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Which meeting categories (SOR/POR/MOR) this signed-in person is allowed to see/create,
+  // per the roster check in backend/routes/auth.js. Cached in localStorage so a page reload
+  // (which has no fresh Microsoft Graph access token to re-check with) can restore it without
+  // forcing a new interactive sign-in every time.
+  const [allowedCategories, setAllowedCategories] = useState<string[]>([]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        setAllowedCategories([]);
+        setAuthLoading(false);
+        return;
+      }
+      const cached = localStorage.getItem('minutemind_allowed_categories');
+      if (cached === null) {
+        // No cached roster result for this browser (first load after enabling access
+        // control, or storage was cleared) — force a fresh sign-in so we can re-run the
+        // Microsoft Graph authorization check, rather than showing a half-authorized app.
+        await signOut(auth);
+        setUser(null);
+        setAllowedCategories([]);
+        setAuthLoading(false);
+        return;
+      }
+      try {
+        setAllowedCategories(JSON.parse(cached));
+      } catch {
+        setAllowedCategories([]);
+      }
       setUser(firebaseUser);
       setAuthLoading(false);
     });
@@ -107,10 +134,35 @@ export default function App() {
     try {
       const result = await signInWithPopup(auth, microsoftProvider);
       const email = result.user.email?.toLowerCase() || '';
-      if (!email.endsWith(ALLOWED_EMAIL_DOMAIN)) {
+      if (!ALLOWED_EMAIL_DOMAINS.some(domain => email.endsWith(domain))) {
         await signOut(auth);
-        setAuthError('Access is restricted to Packages Limited company accounts. Please sign in with your work Microsoft account.');
+        setAuthError('Access is restricted to authorized Packages Group company accounts. Please sign in with your work Microsoft account.');
+        return;
       }
+
+      const credential = OAuthProvider.credentialFromResult(result);
+      const graphAccessToken = credential?.accessToken;
+      if (!graphAccessToken) {
+        await signOut(auth);
+        setAuthError('Sign-in failed: could not verify your account. Please try again.');
+        return;
+      }
+
+      const authRes = await fetch('/api/auth/authorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: graphAccessToken }),
+      });
+      const authData = await authRes.json().catch(() => ({}));
+
+      if (!authRes.ok || !authData.authorized) {
+        await signOut(auth);
+        setAuthError('Your account is not authorized to access MinuteMind AI. Contact your administrator if you believe this is a mistake.');
+        return;
+      }
+
+      localStorage.setItem('minutemind_allowed_categories', JSON.stringify(authData.categories || []));
+      setAllowedCategories(authData.categories || []);
     } catch (err: any) {
       if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
         console.error('Microsoft sign-in failed:', err);
@@ -122,6 +174,7 @@ export default function App() {
   }, []);
 
   const handleSignOut = useCallback(() => {
+    localStorage.removeItem('minutemind_allowed_categories');
     signOut(auth);
   }, []);
 
@@ -341,35 +394,43 @@ We discussed accessibility and contrast. Elena to double check.`,
     }
   };
 
+  // === 1B. CATEGORY ACCESS CONTROL ===
+  // Meetings are stored locally (not in a shared backend), so this only filters what's
+  // displayed/derived in THIS browser — it doesn't scope the underlying storage, which is
+  // intentionally left untouched so saves never drop another category's locally-cached data.
+  const visibleMeetings = useMemo(() => {
+    return meetings.filter(m => allowedCategories.includes(m.category));
+  }, [meetings, allowedCategories]);
+
   // === 2. CALCULATION OF KPI METRICS ===
   const kpis = useMemo(() => {
-    const total = meetings.length;
-    
+    const total = visibleMeetings.length;
+
     // Count this week (last 7 days)
     const now = new Date();
     const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
-    const thisWeekCount = meetings.filter(m => {
+    const thisWeekCount = visibleMeetings.filter(m => {
       if (!m.date) return false;
       const mDate = new Date(m.date);
       return mDate >= startOfWeek;
     }).length;
 
     // Count pending actions across all meetings
-    const pendingActions = meetings.reduce((sum, m) => {
+    const pendingActions = visibleMeetings.reduce((sum, m) => {
       const pendingCount = m.actionItems?.filter(i => i.status === 'pending').length || 0;
       return sum + pendingCount;
     }, 0);
 
     // Filter average duration
-    const totalDuration = meetings.reduce((sum, m) => sum + (Number(m.duration) || 0), 0);
+    const totalDuration = visibleMeetings.reduce((sum, m) => sum + (Number(m.duration) || 0), 0);
     const avg = total > 0 ? Math.round(totalDuration / total) : 0;
 
     return { total, thisWeekCount, pendingActions, avg };
-  }, [meetings]);
+  }, [visibleMeetings]);
 
   // === 3. FILTER AND SEARCH LOGIC ===
   const filteredMeetings = useMemo(() => {
-    return meetings.filter(m => {
+    return visibleMeetings.filter(m => {
       // 1. Keyword search
       const q = searchQuery.toLowerCase().trim();
       const matchSearch = !q || [
@@ -428,7 +489,7 @@ We discussed accessibility and contrast. Elena to double check.`,
 
       return matchSearch && matchCategory && matchCompany && matchDateRange && matchCalendarDate && matchMonth && matchSentiment && matchPending;
     });
-  }, [meetings, searchQuery, categoryFilter, companyFilter, dateRangeFilter, customStartDate, customEndDate, selectedCalendarFilterDate, selectedMonthFilter, sentimentFilter, pendingActionsFilter]);
+  }, [visibleMeetings, searchQuery, categoryFilter, companyFilter, dateRangeFilter, customStartDate, customEndDate, selectedCalendarFilterDate, selectedMonthFilter, sentimentFilter, pendingActionsFilter]);
 
   // === 4. TIMELINE GROUPING ===
   const groupedMeetings = useMemo(() => {
@@ -466,8 +527,8 @@ We discussed accessibility and contrast. Elena to double check.`,
 
   // === SELECTED MEETING OBJECT ===
   const selectedMeeting = useMemo(() => {
-    return meetings.find(m => m.id === selectedMeetingId) || null;
-  }, [meetings, selectedMeetingId]);
+    return visibleMeetings.find(m => m.id === selectedMeetingId) || null;
+  }, [visibleMeetings, selectedMeetingId]);
 
   // === 5. YEAR/MONTH COLLAPSIBLE TREE NAVIGATOR STATE ===
   const [expandedNodes, setExpandedNodes] = useState<{ [key: string]: boolean }>(() => {
@@ -497,7 +558,7 @@ We discussed accessibility and contrast. Elena to double check.`,
 
   const treeData = useMemo(() => {
     const yearsMap: { [key: number]: any } = {};
-    meetings.forEach(m => {
+    visibleMeetings.forEach(m => {
       if (!m.date) return;
       // To bypass timezone issues, parse correctly
       const dateParts = m.date.split('-');
@@ -535,7 +596,7 @@ We discussed accessibility and contrast. Elena to double check.`,
     });
 
     return yearsList;
-  }, [meetings]);
+  }, [visibleMeetings]);
 
   // === 6. ATTEENDEES FORM HANDLERS ===
   const handleAddAttendee = () => {
@@ -693,7 +754,7 @@ We discussed accessibility and contrast. Elena to double check.`,
     setFormDate(new Date().toISOString().split('T')[0]);
     setFormTime('11:00');
     setFormDuration(30);
-    setFormCategory('SOR');
+    setFormCategory((allowedCategories[0] as Meeting['category']) || 'SOR');
     setFormCompany('Company Wide');
     setFormRawMinutes('');
     setFormTags('alignment, review');
@@ -784,7 +845,7 @@ We discussed accessibility and contrast. Elena to double check.`,
     setIsAnswering(true);
     setNlAnswer(null);
     try {
-      const response = await askAboutMeetings(nlQuery, meetings);
+      const response = await askAboutMeetings(nlQuery, visibleMeetings);
       setNlAnswer(response);
       showToast('AI response complete');
     } catch (err) {
@@ -844,8 +905,8 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
     setBriefingContent('');
 
     try {
-      const matching = meetings.filter(
-        m => m.id !== currentMeeting.id && 
+      const matching = visibleMeetings.filter(
+        m => m.id !== currentMeeting.id &&
              m.category === currentMeeting.category && 
              m.company === currentMeeting.company
       );
@@ -924,7 +985,7 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
         text: m.text
       }));
 
-      const answer = await askCorporateMemory(query, meetings, history);
+      const answer = await askCorporateMemory(query, visibleMeetings, history);
 
       const modelMsg = {
         id: 'msg-' + (Date.now() + 1),
@@ -1650,9 +1711,9 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
                         className="bg-[#11131a] border border-gray-800 text-gray-400 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#6c63ff]"
                       >
                         <option value="all">All Categories</option>
-                        <option value="SOR">SOR — Short-term Operational</option>
-                        <option value="POR">POR — Project Operational</option>
-                        <option value="MOR">MOR — Monthly Operational</option>
+                        {allowedCategories.includes('SOR') && <option value="SOR">SOR — Short-term Operational</option>}
+                        {allowedCategories.includes('POR') && <option value="POR">POR — Project Operational</option>}
+                        {allowedCategories.includes('MOR') && <option value="MOR">MOR — Monthly Operational</option>}
                       </select>
 
                       {/* Filter company */}
@@ -1739,7 +1800,7 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
                       
                       {/* Active filter count indicator */}
                       <span className="text-xs text-gray-500 font-medium">
-                        Showing {filteredMeetings.length} of {meetings.length} meetings
+                        Showing {filteredMeetings.length} of {visibleMeetings.length} meetings
                       </span>
                     </div>
                   </div>
@@ -2518,7 +2579,7 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
                       </p>
                     </div>
                   </div>
-                  <StatCharts meetings={meetings} />
+                  <StatCharts meetings={visibleMeetings} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -2614,9 +2675,9 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
                       onChange={(e) => setFormCategory(e.target.value as any)}
                       className="w-full bg-[#11131a] border border-gray-800 text-gray-400 rounded-xl px-4 py-2.5 text-sm"
                     >
-                      <option value="SOR">SOR — Short-term Operational Review</option>
-                      <option value="POR">POR — Project Operational Review</option>
-                      <option value="MOR">MOR — Monthly Operational Review</option>
+                      {allowedCategories.includes('SOR') && <option value="SOR">SOR — Short-term Operational Review</option>}
+                      {allowedCategories.includes('POR') && <option value="POR">POR — Project Operational Review</option>}
+                      {allowedCategories.includes('MOR') && <option value="MOR">MOR — Monthly Operational Review</option>}
                     </select>
                   </div>
 
@@ -3267,8 +3328,7 @@ Generated via MinuteMind AI on ${new Date().toLocaleDateString()}
                     <button
                       type="button"
                       onClick={() => {
-                        const m = meetings.find(x => x.id === selectedMeetingId);
-                        if (m) handleGenerateBriefing(m);
+                        if (selectedMeeting) handleGenerateBriefing(selectedMeeting);
                       }}
                       className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 font-bold px-4 py-2 rounded-xl text-xs transition-all"
                     >

@@ -15,16 +15,23 @@ export const googleProvider = new GoogleAuthProvider();
 // side (single-tenant app registration), this just skips the "which account" chooser and
 // sends users straight to the org login page.
 export const MICROSOFT_TENANT = '0be44e1b-ba65-46db-8984-a0f386b8ef02';
-export const ALLOWED_EMAIL_DOMAIN = '@packages.com.pk';
+// Group companies sharing this Azure AD tenant whose accounts may sign in. The roster in
+// backend/routes/auth.js (matched by email) is the real gate on who gets in; this is just a
+// client-side defense-in-depth check that fails fast before hitting the network.
+export const ALLOWED_EMAIL_DOMAINS = ['@packages.com.pk', '@bullehshah.com.pk', '@dic.com.pk'];
 
 export const microsoftProvider = new OAuthProvider('microsoft.com');
 microsoftProvider.setCustomParameters({ tenant: MICROSOFT_TENANT });
+// Needed so the sign-in result's access token can call Microsoft Graph's /me endpoint
+// (used server-side to read employeeId for the roster-based access control check).
+microsoftProvider.addScope('User.Read');
 
-export { 
-  signInWithPopup, 
-  signOut, 
-  onAuthStateChanged, 
-  collection, 
+export {
+  OAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  collection,
   doc, 
   addDoc, 
   updateDoc, 
